@@ -9,9 +9,9 @@
 <meta name="theme-color" content="#1E50A2">
 <title>QC Label &amp; Size Verifier</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-<link rel="icon" type="image/svg+xml" href="icons/icon-any.svg">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/svg+xml" href="icon-any.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -101,6 +101,7 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 .spec dd{font:700 21px/1.1 var(--display);letter-spacing:.5px;text-align:right}
 .spec dd small{font:500 14px var(--body);color:var(--ink2);letter-spacing:0}
 .spec dd.na{color:var(--ink2);font-weight:500}
+.spec dd.blind{color:var(--blue)}
 .spec .ft{padding:4px 8px}
 
 /* step rail */
@@ -115,6 +116,7 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 .rail button[aria-current="step"] .n{background:var(--tape);color:var(--tape-ink)}
 .rail button.done .n{background:var(--pass);color:#fff}
 .rail button.bad .n{background:var(--fail);color:#fff}
+.rail button.ent .n{background:var(--ink);color:var(--bg)}
 .rail button.bad{border-color:var(--fail)}
 .rail button.na{background:repeating-linear-gradient(-45deg,var(--panel) 0 8px,var(--card) 8px 16px);cursor:default}
 .rail button.na .t{color:var(--ink2);text-decoration:line-through;text-decoration-thickness:2px}
@@ -140,13 +142,20 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 .ov.photo .frame{position:absolute;left:18%;right:18%;top:14%;bottom:14%;border:2px dashed rgba(255,255,255,.75);border-radius:10px}
 .ov .hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(0,0,0,.66);color:#fff;font-weight:600;font-size:15px;padding:6px 12px;border-radius:999px;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis}
 .ov .hint:empty{display:none}
-.camctl{position:absolute;left:8px;right:8px;bottom:8px;display:flex;gap:6px;align-items:center;justify-content:flex-end;pointer-events:none}
+.camctl{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end;pointer-events:none}
 .camctl>*{pointer-events:auto}
 .camctl .btn{min-height:44px;background:rgba(255,255,255,.94);color:#111;border-color:#fff}
+.camctl .btn.on{background:var(--tape);border-color:var(--tape)}
 .camctl .zoom{margin-right:auto;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.55);color:#fff;border-radius:999px;padding:4px 12px;font-size:14px;font-weight:600}
 .camctl .zoom input{width:120px;accent-color:var(--tape)}
-.shutter{position:absolute;z-index:2;left:50%;bottom:62px;transform:translateX(-50%);width:78px;height:78px;border-radius:50%;border:5px solid #fff;background:var(--tape);cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4)}
-.shutter:active{transform:translateX(-50%) scale(.94)}
+.shutter{position:absolute;z-index:2;width:92px;height:92px;border-radius:50%;border:6px solid #fff;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.45);
+  --p:0;background:conic-gradient(var(--pass) calc(var(--p) * 1turn),var(--tape) 0)}
+.shutter.left{left:14px;top:50%;transform:translateY(-50%)}
+.shutter.right{right:14px;top:50%;transform:translateY(-50%)}
+.shutter.center{left:50%;bottom:64px;transform:translateX(-50%)}
+.shutter:active{scale:.93}
+.focusbox{position:absolute;width:76px;height:76px;margin:-38px 0 0 -38px;border:2px solid var(--tape);border-radius:8px;pointer-events:none;opacity:0;transition:opacity .6s}
+.focusbox.on{opacity:1;transition:none}
 .shutter span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .status{margin-top:10px;font-size:15px;min-height:22px}
 .alt{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
@@ -227,12 +236,14 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><img src="icons/icon-192.png" alt="" width="46" height="46"><div><b>QC Label &amp; Size Verifier</b><small>Barcode, width and length in one check</small></div></div>
+    <div class="brand"><img id="brandIcon" src="icon-192.png" alt="" width="46" height="46"><div><b>QC Label &amp; Size Verifier</b><small>Barcode, width and length in one check</small></div></div>
     <div class="tally hidden" id="tally" title="Today on this tablet"></div>
+    <button class="btn small primary hidden" id="installBtn" type="button">Install app</button>
     <button class="pill off" id="syncPill" type="button">Google Sheet: not set up</button>
     <div class="userchip hidden" id="userChip"><span id="userName"></span><button class="btn small" id="logoutBtn" type="button">Log out</button></div>
   </header>
   <div class="listinfo" id="listinfo">Loading code list…</div>
+  <div id="iconBanner"></div>
   <div id="globalBanner"></div>
 
   <section class="panel login hidden" id="loginView">
@@ -273,9 +284,12 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <div class="camwrap" id="camwrap">
         <video id="video" playsinline muted></video>
         <div class="ov scan" id="ov"><div class="band"></div><div class="frame"></div><div class="hint" id="ovHint"></div></div>
+        <div class="focusbox" id="focusBox"></div>
         <button class="shutter hidden" id="shutter" type="button"><span>Take photo</span></button>
         <div class="camctl">
           <label class="zoom hidden" id="zoomBox">Zoom <input type="range" id="zoom" min="1" max="1" step="0.1" value="1"></label>
+          <button class="btn small hidden" id="autoBtn" type="button" aria-pressed="true">Auto photo: on</button>
+          <button class="btn small hidden" id="sideBtn" type="button">Button: left</button>
           <button class="btn small hidden" id="torchBtn" type="button">Light</button>
           <button class="btn small" id="camStop" type="button">Close camera</button>
         </div>
@@ -294,8 +308,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
             <div class="in"><input type="text" id="reading" inputmode="decimal" autocomplete="off" placeholder="Reading" aria-describedby="mNote"><span class="u">mm</span></div>
             <button class="btn primary" id="okReading" type="button">Confirm</button>
           </div>
-          <div class="mnote" id="mNote">Type what the tape shows in mm. Tape says 121.3 cm → type 1213.</div>
-          <div class="gauge" id="liveGauge"></div>
+          <div class="mnote" id="mNote">In mm. Tape shows 100.5 cm → type 1005.</div>
           <div class="gmsg" id="liveMsg"></div>
           <div class="vactions"><button class="btn small" id="retake" type="button">Retake photo</button></div>
         </div>
@@ -363,7 +376,7 @@ const pad = n => String(n).padStart(2, '0');
 const dStr = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const tStr = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 
-const S = { items: [], mode: 'IPQC', customer: '', expected: null, insp: null, pending: 0,
+const S = { autoShot: LS.get('autoShot', true), side: LS.get('shutterSide', 'left'), items: [], mode: 'IPQC', customer: '', expected: null, insp: null, pending: 0,
   sheetUrl: DEFAULT_SHEET_URL || LS.get('sheetUrl', ''), device: LS.get('device', null) };
 if (!S.device){ S.device = 'T' + Math.random().toString(36).slice(2, 7).toUpperCase(); LS.set('device', S.device); }
 
@@ -516,9 +529,9 @@ function renderChips(){
   if (S.customer && !cs.includes(S.customer)) S.customer = '';
   $('#custChips').innerHTML = cs.length > 1 ? [''].concat(cs).map(c => `<button type="button" data-cust="${esc(c)}" aria-pressed="${S.customer === c}">${c ? esc(c) : 'All'}</button>`).join('') : '';
 }
-function specRow(name, v, nom, tol){
+function specRow(name, v){
   if (!v) return `<dt>${name}</dt><dd class="na">— not required</dd>`;
-  return `<dt>${name}${nom && nom !== v ? `<br><small>nominal ${fmm(nom)}</small>` : ''}</dt><dd>${fmm(v)} <small>±${fmm(tol)} mm</small></dd>`;
+  return `<dt>${name}</dt><dd class="blind">measure <small>spec hidden</small></dd>`;
 }
 function renderPick(){
   const q = $('#modelSearch').value.trim().toUpperCase(), qd = digits(q), pl = $('#picklist');
@@ -532,7 +545,7 @@ function renderPick(){
   const e = S.expected;
   $('#pickedBox').innerHTML = e ? `<div class="spec"><div class="hd"><div class="m">${esc(e.model)}</div><div class="d">${esc(e.desc)}${e.alt ? ', ' + esc(e.alt) : ''}${e.customer ? ', ' + esc(e.customer) : ''}</div></div>
     <dl><dt>Label code</dt><dd>${e.code ? esc(fmtCode(e.code)) : '<span class="flag bad">none in list</span>'}</dd>
-    ${specRow('Width', e.wid, e.widNom, e.tol)}${specRow('Length', e.len, e.lenNom, e.tol)}</dl>
+    ${specRow('Width', e.wid)}${specRow('Length', e.len)}</dl>
     <div class="ft"><button class="btn link" type="button" id="clearPick">Change model</button></div></div>` : '';
 }
 function pickModel(model){
@@ -571,21 +584,21 @@ function goNext(){
 }
 function setStep(k){
   S.insp.cur = k; renderRail(); renderMeasure(); applyCamMode();
-  const e = S.expected;
   if (k === 'label') idleVerdict();
   else showVerdict({ status: 'idle', word: `Measure ${NAMES[k].toLowerCase()}`,
-    why: `${stream ? 'Hold the tape reading on the yellow line and press the yellow button.' : 'Open the camera, then photo the tape reading.'} Spec ${fmm(S.insp.steps[k].spec)} ±${fmm(e.tol)} mm.` });
+    why: !stream ? 'Open the camera, then photo the tape reading.'
+      : S.autoShot ? 'Put the tape reading on the yellow line and hold still. The photo is taken by itself.'
+      : 'Put the tape reading on the yellow line and press the yellow button.' });
 }
 function railSub(k, s){
-  const e = S.expected;
   if (s.status === 'na') return k === 'label' ? 'no code in list' : 'not required';
   if (k === 'label'){
     if (s.status === 'done') return s.ok ? 'matches' : 'wrong label';
     return 'scan the sticker';
   }
-  if (s.status === 'done') return `${fmm(s.value)} mm ${s.ok ? 'in tol.' : 'out of tol.'}`;
+  if (s.status === 'done') return S.insp.saved ? `${fmm(s.value)} mm ${s.ok ? 'in tol.' : 'out of tol.'}` : `${fmm(s.value)} mm entered`;
   if (s.status === 'skip') return 'not measured';
-  return `${fmm(s.spec)} ±${fmm(e.tol)} mm`;
+  return 'measure';
 }
 function renderRail(){
   const r = $('#rail');
@@ -593,97 +606,59 @@ function renderRail(){
     r.innerHTML = ORDER.map((k, i) => `<li><button type="button" disabled${k === 'label' && !S.expected ? ' aria-current="step"' : ''}><span class="n">${i + 1}</span><span><span class="t">${NAMES[k]}</span><span class="s">${S.expected ? '' : k === 'label' ? 'pick a model, or scan to look up' : 'pick a model first'}</span></span></button></li>`).join('');
     return;
   }
-  const st = S.insp.steps;
+  const st = S.insp.steps, saved = S.insp.saved;
   r.innerHTML = ORDER.map((k, i) => { const s = st[k];
-    const cls = s.status === 'na' || s.status === 'skip' ? 'na' : s.status === 'done' ? (s.ok ? 'done' : 'bad') : '';
-    const canTap = !S.insp.saved && s.need && s.status !== 'na' && !(k !== 'label' && st.label.status === 'done' && !st.label.ok);
-    return `<li><button type="button" data-step="${k}" class="${cls}" ${S.insp.cur === k && !S.insp.saved ? 'aria-current="step"' : ''} ${canTap ? '' : 'disabled'}>
-      <span class="n">${s.status === 'done' ? (s.ok ? '✓' : '✗') : s.status === 'na' || s.status === 'skip' ? '–' : i + 1}</span>
+    const hide = k !== 'label' && s.status === 'done' && !saved;          // size result stays hidden until saved
+    const cls = s.status === 'na' || s.status === 'skip' ? 'na' : s.status === 'done' ? (hide ? 'ent' : s.ok ? 'done' : 'bad') : '';
+    const canTap = !saved && s.need && s.status !== 'na' && !(k !== 'label' && st.label.status === 'done' && !st.label.ok);
+    return `<li><button type="button" data-step="${k}" class="${cls}" ${S.insp.cur === k && !saved ? 'aria-current="step"' : ''} ${canTap ? '' : 'disabled'}>
+      <span class="n">${s.status === 'done' ? (hide || s.ok ? '✓' : '✗') : s.status === 'na' || s.status === 'skip' ? '–' : i + 1}</span>
       <span><span class="t">${NAMES[k]}</span><span class="s">${esc(railSub(k, s))}</span></span>
       ${s.photo ? `<img src="${s.photo}" alt="">` : ''}</button></li>`; }).join('');
 }
 $('#rail').addEventListener('click', e => {
   const b = e.target.closest('button[data-step]'); if (!b || b.disabled || !S.insp || S.insp.saved) return;
   const k = b.dataset.step, s = S.insp.steps[k];
-  if (s.status === 'done'){ s.status = 'todo'; if (k === 'label'){ delete s.ok; } }
+  if (s.status === 'done'){ s.status = 'todo'; if (k === 'label'){ delete s.ok; } else s.draft = fmm(s.value); }
   setStep(k);
 });
-
-/* ---------- tape gauge (the drawing) ---------- */
-function gaugeSVG(spec, tol, val, compact){
-  const span = Math.max(6, Math.ceil(tol * 4)), W = 600, H = compact ? 70 : 114, cx = W / 2, px = (W / 2 - 24) / span;
-  const X = mm => cx + (mm - spec) * px, top = compact ? 14 : 22, th = compact ? 40 : 56;
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tape gauge: spec ${fmm(spec)} plus or minus ${fmm(tol)} mm${val != null ? ', reading ' + fmm(val) : ''}">`;
-  s += `<rect x="4" y="${top}" width="${W - 8}" height="${th}" rx="6" fill="#F4C20D"/>`;
-  s += `<rect x="${X(spec - tol)}" y="${top}" width="${2 * tol * px}" height="${th}" fill="#17803D" fill-opacity=".28"/>`;
-  s += `<rect x="${X(spec - tol)}" y="${top}" width="${2 * tol * px}" height="4" fill="#17803D"/>`;
-  const from = Math.ceil(spec - span), to = Math.floor(spec + span);
-  for (let mm = from; mm <= to; mm += 0.5){
-    const x = X(mm); if (x < 8 || x > W - 8) continue;
-    const whole = Number.isInteger(mm), five = whole && mm % 5 === 0;
-    const len = five ? th * .62 : whole ? th * .4 : th * .22;
-    s += `<line x1="${x}" y1="${top}" x2="${x}" y2="${top + len}" stroke="#1B1B12" stroke-width="${five ? 2.4 : whole ? 1.6 : 1}"/>`;
-    if (five && !compact) s += `<text x="${x}" y="${top + th - 6}" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,sans-serif" font-weight="700" font-size="17" fill="#1B1B12">${mm}</text>`;
-  }
-  s += `<line x1="${X(spec)}" y1="${top - 4}" x2="${X(spec)}" y2="${top + th + 4}" stroke="#1E50A2" stroke-width="2" stroke-dasharray="4 3"/>`;
-  if (!compact) s += `<text x="${X(spec)}" y="${top - 7}" text-anchor="middle" font-family="Barlow,Arial,sans-serif" font-weight="600" font-size="13" fill="currentColor">spec ${fmm(spec)}</text>`;
-  if (val != null){
-    const off = val - spec, ok = Math.abs(off) <= tol + 1e-9, clamped = Math.max(spec - span, Math.min(spec + span, val));
-    const col = ok ? '#17803D' : '#C8261F', dx = X(clamped) - cx, by = top + th;
-    s += `<g class="needle" style="transform:translateX(${dx}px)"><line x1="${cx}" y1="${top - 2}" x2="${cx}" y2="${by + 2}" stroke="${col}" stroke-width="4"/>
-      <path d="M${cx - 9} ${by + 14} L${cx} ${by + 2} L${cx + 9} ${by + 14} Z" fill="${col}"/>
-      ${compact ? '' : `<text x="${cx}" y="${by + 30}" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,sans-serif" font-weight="800" font-size="19" fill="${col}">${fmm(val)}${Math.abs(off) > span ? (off > 0 ? ' ▶' : ' ◀') : ''}</text>`}</g>`;
-  }
-  return s + '</svg>';
-}
-function tolText(val, spec, tol){
-  const off = Math.round((val - spec) * 10) / 10;
-  if (Math.abs(val - spec) <= tol + 1e-9) return { ok: true, txt: `In tolerance (${off >= 0 ? '+' : ''}${fmm(off)} mm)` };
-  return { ok: false, txt: `Out of tolerance ±${fmm(tol)} mm: ${off > 0 ? '+' : ''}${fmm(off)} mm` };
-}
 
 /* ---------- measurement entry ---------- */
 function renderMeasure(){
   const box = $('#measure'), I = S.insp;
   const k = I && !I.saved ? I.cur : null, s = k && k !== 'label' ? I.steps[k] : null;
   if (!s || !s.photo || s.status !== 'todo'){ box.classList.add('hidden'); return; }
-  const e = S.expected;
   $('#shotImg').src = s.photo;
   $('#mTitle').textContent = `${NAMES[k]} reading`;
-  $('#mSpec').textContent = `Spec ${fmm(s.spec)} mm, accept ${fmm(s.spec - e.tol)} to ${fmm(s.spec + e.tol)} mm`;
+  $('#mSpec').textContent = 'Check the photo is sharp, then type exactly what the tape shows.';
   $('#reading').value = s.draft || '';
   box.classList.remove('hidden');
-  liveGauge();
+  checkInput();
   setTimeout(() => { $('#reading').focus(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 60);
 }
 function parseReading(){
   const t = $('#reading').value.replace(',', '.').trim(); if (!t) return null;
   const n = parseFloat(t); return isFinite(n) && n > 0 ? n : NaN;
 }
-function liveGauge(){
-  const I = S.insp; if (!I || !I.cur || I.cur === 'label') return;
-  const s = I.steps[I.cur], e = S.expected, v = parseReading();
-  s.draft = $('#reading').value;
-  const g = $('#liveGauge'), old = g.querySelector('.needle'), from = old ? old.style.transform : null;
-  g.innerHTML = gaugeSVG(s.spec, e.tol, v != null && !isNaN(v) ? v : null);
-  const nd = g.querySelector('.needle');                      // slide the needle from where it was
-  if (nd && from){ const to = nd.style.transform; nd.style.transition = 'none'; nd.style.transform = from; void nd.getBoundingClientRect(); nd.style.transition = ''; nd.style.transform = to; }
-  const m = $('#liveMsg');
-  if (v == null){ m.className = 'gmsg'; m.textContent = ''; return; }
-  if (isNaN(v)){ m.className = 'gmsg bad'; m.textContent = 'Numbers only, for example 1213 or 928.5'; return; }
-  if (v < s.spec / 5){ m.className = 'gmsg bad'; m.textContent = `Too small for ${fmm(s.spec)} mm. Did you type cm? Type mm.`; return; }
-  const r = tolText(v, s.spec, e.tol); m.className = 'gmsg ' + (r.ok ? 'ok' : 'bad'); m.textContent = r.txt;
+function checkInput(){                                          // format check only, never shows the spec
+  const I = S.insp; if (!I || !I.cur || I.cur === 'label') return true;
+  const s = I.steps[I.cur], v = parseReading(), m = $('#liveMsg');
+  s.draft = $('#reading').value; m.className = 'gmsg bad';
+  if (v == null){ m.textContent = ''; return false; }
+  if (isNaN(v)){ m.textContent = 'Numbers only, for example 1005 or 928.5'; return false; }
+  if (v < s.spec / 5){ m.textContent = 'This looks like cm. Type mm: 100.5 cm → 1005.'; return false; }
+  m.textContent = ''; return true;
 }
-$('#reading').addEventListener('input', liveGauge);
+$('#reading').addEventListener('input', checkInput);
 $('#reading').addEventListener('keydown', e => { if (e.key === 'Enter') confirmReading(); });
 $('#okReading').addEventListener('click', confirmReading);
 function confirmReading(){
   const I = S.insp; if (!I || !I.cur || I.cur === 'label') return;
   const s = I.steps[I.cur], v = parseReading(), e = S.expected;
-  if (v == null || isNaN(v)){ $('#liveMsg').className = 'gmsg bad'; $('#liveMsg').textContent = 'Type the tape reading in mm first.'; $('#reading').focus(); return; }
-  if (v < s.spec / 5){ $('#reading').focus(); return; }
+  if (v == null){ $('#liveMsg').className = 'gmsg bad'; $('#liveMsg').textContent = 'Type the tape reading in mm first.'; $('#reading').focus(); return; }
+  if (!checkInput()){ $('#reading').focus(); return; }
   s.value = v; s.ok = Math.abs(v - s.spec) <= e.tol + 1e-9; s.status = 'done'; delete s.draft;
-  beep(s.ok ? 'tick' : 'bad');
+  beep('tick');
   $('#measure').classList.add('hidden');
   goNext();
 }
@@ -725,7 +700,7 @@ function toJpeg(src, sw, sh, max = 1600, q = .8){
 const snapVideo = () => { const v = $('#video'); return v.videoWidth ? toJpeg(v, v.videoWidth, v.videoHeight) : ''; };
 
 /* ---------- live camera ---------- */
-let armAt = 0, stream = null, camTimer = null, camBusy = false, lastRead = '', sameCount = 0, camPaused = true, track = null, torchOn = false;
+let camCaps = {}, armAt = 0, stream = null, camTimer = null, camBusy = false, lastRead = '', sameCount = 0, camPaused = true, track = null, torchOn = false;
 const cv = document.createElement('canvas'), cctx = cv.getContext('2d', { willReadFrequently: true });
 $('#camBtn').addEventListener('click', startCam);
 $('#camStop').addEventListener('click', stopCam);
@@ -736,7 +711,7 @@ async function startCam(){
   catch (err){ stream = null; setStatus(err && err.name === 'NotAllowedError' ? 'Camera permission is blocked. Tap the lock icon in the address bar → Camera → Allow, then reload.' : 'Camera could not start (' + (err && err.name || 'error') + ').'); return; }
   const v = $('#video'); v.srcObject = stream; await v.play().catch(() => {});
   $('#camwrap').classList.add('on'); $('#camBtn').classList.add('hidden'); track = stream.getVideoTracks()[0];
-  try { const caps = track.getCapabilities ? track.getCapabilities() : {};
+  try { const caps = camCaps = track.getCapabilities ? track.getCapabilities() : {};
     $('#torchBtn').classList.toggle('hidden', !caps.torch);
     if (caps.focusMode && caps.focusMode.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
     if (caps.zoom && caps.zoom.max > caps.zoom.min){ const z = $('#zoom'); z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, 8); z.step = caps.zoom.step || .1; z.value = caps.zoom.min; $('#zoomBox').classList.remove('hidden'); }
@@ -744,8 +719,71 @@ async function startCam(){
   applyCamMode();
   if (S.insp && S.insp.cur && S.insp.cur !== 'label') setStep(S.insp.cur);
 }
-$('#zoom').addEventListener('input', e => { if (track) track.applyConstraints({ advanced: [{ zoom: Number(e.target.value) }] }).catch(() => {}); });
-function stopCam(){ clearInterval(camTimer); camPaused = true; if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } $('#camwrap').classList.remove('on'); $('#camBtn').classList.remove('hidden'); $('#zoomBox').classList.add('hidden'); torchOn = false; setStatus(''); applyCamMode(); }
+const zoomKey = () => camMode() === 'photo' ? 'photoZoom' : 'scanZoom';
+$('#zoom').addEventListener('input', e => { if (!track) return; const z = Number(e.target.value); LS.set(zoomKey(), z); track.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {}); });
+function applyZoom(){                                             // each mode remembers its own zoom on this tablet
+  if (!track || !camCaps.zoom || !(camCaps.zoom.max > camCaps.zoom.min)) return;
+  const z = Math.min(Number($('#zoom').max), Math.max(camCaps.zoom.min, Number(LS.get(zoomKey(), camCaps.zoom.min))));
+  $('#zoom').value = z; track.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
+}
+function focusAt(x, y){                                           // x, y from 0 to 1
+  if (!track || !camCaps.focusMode) return false;
+  const c = { focusMode: camCaps.focusMode.includes('single-shot') ? 'single-shot' : camCaps.focusMode.includes('continuous') ? 'continuous' : camCaps.focusMode[0] };
+  if ('pointsOfInterest' in camCaps || (track.getSettings && 'pointsOfInterest' in track.getSettings())) c.pointsOfInterest = [{ x, y }];
+  track.applyConstraints({ advanced: [c] }).catch(() => {});
+  if (c.focusMode === 'single-shot' && camCaps.focusMode.includes('continuous'))
+    setTimeout(() => { if (track) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {}); }, 2500);
+  return true;
+}
+$('#video').addEventListener('click', e => {                      // tap the picture to focus there
+  const r = e.currentTarget.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+  focusAt(x, y);
+  const fb = $('#focusBox'); fb.style.left = (x * 100) + '%'; fb.style.top = (y * 100) + '%';
+  fb.classList.add('on'); setTimeout(() => fb.classList.remove('on'), 50);
+  auto.steadySince = 0;
+});
+$('#autoBtn').addEventListener('click', () => { S.autoShot = !S.autoShot; LS.set('autoShot', S.autoShot); applyCamMode(); if (S.insp && S.insp.cur && S.insp.cur !== 'label') setStep(S.insp.cur); });
+$('#sideBtn').addEventListener('click', () => { S.side = { left: 'right', right: 'center', center: 'left' }[S.side] || 'left'; LS.set('shutterSide', S.side); applyCamMode(); });
+
+/* auto photo: waits until the picture is steady and sharp, then takes it */
+const auto = { timer: null, prev: null, steadySince: 0, hist: [], start: 0, lastFocus: 0 };
+const acv = document.createElement('canvas'); acv.width = 240; acv.height = 180;
+const acx = acv.getContext('2d', { willReadFrequently: true });
+function setRing(p){ $('#shutter').style.setProperty('--p', p); }
+function stopAuto(){ clearInterval(auto.timer); auto.timer = null; setRing(0); }
+function startAuto(){
+  stopAuto(); if (!S.autoShot || !stream) return;
+  Object.assign(auto, { prev: null, steadySince: 0, hist: [], start: Date.now(), lastFocus: Date.now() });
+  focusAt(.5, .5);
+  auto.timer = setInterval(autoTick, 150);
+}
+function autoTick(){
+  const v = $('#video'); if (!stream || !v.videoWidth || camMode() !== 'photo'){ stopAuto(); return; }
+  const W = v.videoWidth, H = v.videoHeight, sw = W * .5, sh = H * .5;       // centre of the picture, around the yellow line
+  acx.drawImage(v, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, 240, 180);
+  const g = greyFrom(acx, 240, 180);
+  let s1 = 0, s2 = 0, n = 0;                                               // sharpness = variance of the Laplacian
+  for (let y = 1; y < 179; y++) for (let x = 1, i = y * 240 + 1; x < 239; x++, i++){
+    const l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - 240] - g[i + 240]; s1 += l; s2 += l * l; n++; }
+  const sharp = s2 / n - (s1 / n) ** 2;
+  let motion = 99;
+  if (auto.prev){ let d = 0; for (let i = 0; i < g.length; i += 3) d += Math.abs(g[i] - auto.prev[i]); motion = d / (g.length / 3); }
+  auto.prev = g;
+  const now = Date.now(), waited = now - auto.start;
+  auto.hist.push({ t: now, s: sharp }); auto.hist = auto.hist.filter(h => now - h.t < 3000);
+  const best = Math.max(...auto.hist.map(h => h.s));
+  const easy = waited > 7000;                                               // after 7 s accept a little more shake
+  if (motion < (easy ? 9 : 5.5)){ if (!auto.steadySince) auto.steadySince = now; } else auto.steadySince = 0;
+  if (sharp < best * .6 && now - auto.lastFocus > 2500){ focusAt(.5, .5); auto.lastFocus = now; }
+  const sharpOk = waited > 1000 && sharp >= 18 && sharp >= best * (easy ? .75 : .85);
+  const need = easy ? 800 : 1100, held = auto.steadySince ? now - auto.steadySince : 0;
+  const p = sharpOk ? Math.min(1, held / need) : 0;
+  setRing(p);
+  $('#ovHint').textContent = !auto.steadySince ? 'Hold still…' : !sharpOk ? 'Focusing…' : 'Keep still…';
+  if (p >= 1){ stopAuto(); takeShot(); }
+}
+function takeShot(){ const p = snapVideo(); if (p) gotPhoto(p); }
+function stopCam(){ stopAuto(); clearInterval(camTimer); camPaused = true; if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } $('#camwrap').classList.remove('on'); $('#camBtn').classList.remove('hidden'); $('#zoomBox').classList.add('hidden'); torchOn = false; setStatus(''); applyCamMode(); }
 $('#torchBtn').addEventListener('click', () => { if (!track) return; torchOn = !torchOn; track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {}); });
 
 function camMode(){
@@ -764,7 +802,11 @@ function applyCamMode(){
   if (!stream) return;
   ov.className = 'ov ' + (m === 'photo' ? 'photo' : m === 'scan' ? 'scan' : '');
   $('#shutter').classList.toggle('hidden', m !== 'photo');
-  clearInterval(camTimer); camPaused = true;
+  ['autoBtn', 'sideBtn'].forEach(id => $('#' + id).classList.toggle('hidden', m !== 'photo'));
+  $('#autoBtn').textContent = 'Auto photo: ' + (S.autoShot ? 'on' : 'off'); $('#autoBtn').classList.toggle('on', S.autoShot);
+  $('#sideBtn').textContent = 'Button: ' + S.side;
+  $('#shutter').className = 'shutter ' + S.side + (m === 'photo' ? '' : ' hidden');
+  clearInterval(camTimer); camPaused = true; stopAuto(); applyZoom();
   if (m === 'scan'){
     $('#ovHint').textContent = S.expected ? `Scan the label of ${S.expected.model}` : 'Look up: scan any label';
     camPaused = false; lastRead = ''; sameCount = 0; armAt = Date.now() + 1500; camTimer = setInterval(camTick, 140);
@@ -772,7 +814,8 @@ function applyCamMode(){
   } else if (m === 'photo'){
     const k = S.insp.cur, up = /upright/i.test(S.expected.desc) && k === 'length';
     $('#ovHint').textContent = `${NAMES[k]}: put the tape reading on the yellow line`;
-    setStatus(`Close-up of the tape at the edge of the part${up ? ', length including the base plate' : ''}. Numbers must be sharp. Use Zoom or Light if needed.`);
+    setStatus(`Close-up of the tape at the edge of the part${up ? ', length including the base plate' : ''}. ${S.autoShot ? 'Hold still: the ring fills and the photo is taken by itself.' : 'Press the yellow button.'} Tap the picture to focus. Zoom is remembered.`);
+    startAuto();
   } else { $('#ovHint').textContent = S.insp && S.insp.saved ? 'Saved. Press Next carton.' : ''; setStatus(''); }
 }
 async function camTick(){
@@ -793,7 +836,7 @@ async function camTick(){
     }
   } finally { camBusy = false; }
 }
-$('#shutter').addEventListener('click', () => { const p = snapVideo(); if (p) gotPhoto(p); });
+$('#shutter').addEventListener('click', () => { stopAuto(); takeShot(); });
 $('#fileShot').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
   try { const bmp = await createImageBitmap(f); gotPhoto(toJpeg(bmp, bmp.width, bmp.height)); }
@@ -848,7 +891,7 @@ function finish(){
   const sizeTxt = [W.status === 'done' ? `W ${fmm(W.value)}mm${W.ok ? '' : ' OUT'}` : '', Ln.status === 'done' ? `L ${fmm(Ln.value)}mm${Ln.ok ? '' : ' OUT'}` : ''].filter(Boolean).join(', ');
   let remark;
   if (status === 'fail' && L.status === 'done' && !L.ok) remark = `NG ${L.code} = ${L.found || 'not in list'}, expected ${e.model} ${e.code}`;
-  else remark = `${L.code ? L.code + ' ' : ''}${e.model} ${status === 'fail' ? 'NG' : 'OK'}${sizeTxt ? ', ' + sizeTxt : ''}${dimBad.length ? ` (spec ${dimBad.map(d => fmm(d.spec)).join('/')} ±${fmm(e.tol)})` : ''}`;
+  else remark = `${L.code ? L.code + ' ' : ''}${e.model} ${status === 'fail' ? 'NG' : 'OK'}${sizeTxt ? ', ' + sizeTxt : ''}${dimBad.length ? ` (out of tol. ±${fmm(e.tol)})` : ''}`;
   const result = status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : 'CHECK';
   const rec = { id: S.device + '-' + now.getTime(), date: dStr(now), time: tStr(now), form: e.form, customer: e.customer, expected: e.model, desc: e.desc,
     expectedCode: e.code, code: L.code || '', found: L.status === 'done' ? (L.found || '(not in list)') : '', labelResult: L.status === 'na' ? 'NO CODE IN LIST' : L.ok ? 'PASS' : 'FAIL',
@@ -866,8 +909,8 @@ function finish(){
   [[W, 'Width'], [Ln, 'Length']].forEach(([d, n]) => {
     if (!d.need) checks.push({ cls: 'skip', b: n, span: 'not required for this model' });
     else if (d.status !== 'done') checks.push({ cls: 'skip', b: `${n} not measured`, span: 'stopped because the label is wrong' });
-    else { const t = tolText(d.value, d.spec, e.tol);
-      checks.push({ cls: d.ok ? 'ok' : 'bad', b: `${n} ${fmm(d.value)} mm`, span: `spec ${fmm(d.spec)} ±${fmm(e.tol)} mm.`, oot: t.txt, gauge: gaugeSVG(d.spec, e.tol, d.value, true), photo: d.photo }); }
+    else checks.push({ cls: d.ok ? 'ok' : 'bad', b: `${n} ${fmm(d.value)} mm`, span: d.ok ? `In tolerance (±${fmm(e.tol)} mm)` : '',
+      oot: d.ok ? '' : `Out of tolerance (more than ±${fmm(e.tol)} mm)`, photo: d.photo });
   });
   renderRail(); applyCamMode();
   showVerdict({ status, word, why, checks, remark, actions: [['Next carton', nextCarton, true]] });
@@ -879,7 +922,7 @@ function showVerdict(o){
   const v = $('#verdict'); v.className = 'verdict ' + (o.status || 'idle'); void v.offsetWidth; v.classList.add('flash');
   $('#vword').textContent = o.word; $('#vwhy').textContent = o.why || '';
   $('#checks').innerHTML = (o.checks || []).map((c, i) => `<li class="${c.cls}"><span class="ic">${c.cls === 'ok' ? '✓' : c.cls === 'bad' ? '✗' : '–'}</span>
-    <div><b>${esc(c.b)}</b><span>${esc(c.span)}</span>${c.oot ? ` <span class="${c.cls === 'bad' ? 'oot' : ''}">${esc(c.oot)}</span>` : ''}
+    <div><b>${esc(c.b)}</b><span>${esc(c.span)}</span>${c.oot ? `<span class="${c.cls === 'bad' ? 'oot' : ''}">${esc(c.oot)}</span>` : ''}
     ${c.gauge ? `<div class="gauge">${c.gauge}</div>` : ''}${c.photo ? `<button class="btn link" type="button" data-photo="${i}">See photo</button>` : ''}</div></li>`).join('');
   $$('#checks [data-photo]').forEach(b => b.addEventListener('click', () => { $('#photoBig').src = o.checks[+b.dataset.photo].photo; $('#photoDlg').showModal(); }));
   $('#vactions').innerHTML = (o.actions || []).map((a, i) => `<button class="btn ${a[2] ? 'primary' : ''}" type="button" data-act="${i}" style="min-width:180px">${esc(a[0])}</button>`).join('');
@@ -890,7 +933,7 @@ function showVerdict(o){
 function idleVerdict(){
   const e = S.expected;
   showVerdict({ status: 'idle', word: 'Ready', why: !e ? 'Pick the model first. You can also scan any label to look it up.'
-    : e.code ? `Open the camera and scan the label for ${e.model}.${e.wid || e.len ? ' Width and length come next.' : ' Label only, no size check.'}` : '' });
+    : e.code ? `Open the camera and scan the label for ${e.model}.${e.wid && e.len ? ' Width and length come next.' : e.wid ? ' Width comes next.' : e.len ? ' Length comes next.' : ' Label only, no size check.'}` : '' });
 }
 $('#copyRemark').addEventListener('click', async () => {
   const t = $('#remarkTxt').value; if (!t) return;
@@ -951,6 +994,16 @@ $('#logoutBtn').addEventListener('click', async () => {
 });
 function sessionAlive(s){ return s && s.token && Date.now() < s.exp; }
 setInterval(() => { if (S.session && !sessionAlive(S.session)){ LS.set('session', null); showLogin('Your session ended (12 hours). Please log in again.'); } }, 60000);
+
+/* ---------- install as an app ---------- */
+let installEv = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; $('#installBtn').classList.remove('hidden'); });
+window.addEventListener('appinstalled', () => { $('#installBtn').classList.add('hidden'); toast('Installed. Open it from the QC Verify icon.'); });
+$('#installBtn').addEventListener('click', async () => { if (!installEv) return; installEv.prompt(); try { await installEv.userChoice; } catch {} installEv = null; $('#installBtn').classList.add('hidden'); });
+function iconMissing(){
+  $('#iconBanner').innerHTML = '<div class="banner err">The app icon file is missing on the website (icon-192.png). Without it Chrome can only make a plain shortcut. Upload all the icon files next to index.html, then reload.</div>';
+}
+const bi = $('#brandIcon'); bi.addEventListener('error', iconMissing); if (bi.complete && !bi.naturalWidth) iconMissing();
 
 /* ---------- start ---------- */
 const cached = LS.get('sheetList', null); if (cached && S.sheetUrl) applyList(cached.items, 'saved copy');
