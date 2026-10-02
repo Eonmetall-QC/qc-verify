@@ -156,6 +156,11 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 .shutter.right{right:14px;top:50%;transform:translateY(-50%)}
 .shutter.center{left:50%;bottom:64px;transform:translateX(-50%)}
 .shutter:active{scale:.93}
+.shutter.locked{background:#8A9096;border-color:#D5D9DC;box-shadow:none}
+.ov.photo.seen::before{background:#22C55E;width:5px;margin-left:-2.5px}
+.ov .chip{position:absolute;left:12px;top:12px;padding:5px 10px;border-radius:8px;font-weight:700;font-size:14px;background:rgba(0,0,0,.66);color:#fff}
+.ov .chip.ok{background:#17803D}
+.ov .chip:empty{display:none}
 .focusbox{position:absolute;width:76px;height:76px;margin:-38px 0 0 -38px;border:2px solid var(--tape);border-radius:8px;pointer-events:none;opacity:0;transition:opacity .6s}
 .focusbox.on{opacity:1;transition:none}
 .shutter span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -287,13 +292,14 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <button class="btn dark big" id="camBtn" type="button">Open camera</button>
       <div class="camwrap" id="camwrap">
         <video id="video" playsinline muted></video>
-        <div class="ov scan" id="ov"><div class="band"></div><div class="frame"></div><div class="hint" id="ovHint"></div></div>
+        <div class="ov scan" id="ov"><div class="band"></div><div class="frame"></div><div class="hint" id="ovHint"></div><div class="chip" id="ovChip"></div></div>
         <div class="focusbox" id="focusBox"></div>
         <button class="shutter hidden" id="shutter" type="button"><span>Take photo</span></button>
         <div class="camctl">
           <label class="zoom hidden" id="zoomBox">Zoom <input type="range" id="zoom" min="1" max="1" step="0.1" value="1"></label>
           <button class="btn small hidden" id="autoBtn" type="button" aria-pressed="true">Auto photo: on</button>
           <button class="btn small hidden" id="sideBtn" type="button">Button: left</button>
+          <button class="btn small hidden" id="forceBtn" type="button">Take photo anyway</button>
           <button class="btn small hidden" id="torchBtn" type="button">Light</button>
           <button class="btn small" id="camStop" type="button">Close camera</button>
         </div>
@@ -353,6 +359,10 @@ const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbxxapH1AfbRFy
 /* Minor band: reading outside the tolerance by up to this many mm = yellow "minor, still acceptable".
    Further out = red FAIL. Example: spec 894, tolerance ±1, band 1 → 893–895 pass, 892 / 896 minor, 891 / 897 and beyond fail. */
 const MINOR_BAND_MM = 2;
+/* Photo check: width/length photo can only be taken when a tape measure is seen at the yellow line.
+   TAPE_CHECK = false switches it off. After FORCE_AFTER_S seconds a "Take photo anyway" button appears; that photo is flagged in the Remark. */
+const TAPE_CHECK = true;
+const FORCE_AFTER_S = 15;
 /* ============================================================================================ */
 (() => {
 'use strict';
@@ -757,6 +767,106 @@ $('#autoBtn').addEventListener('click', () => { S.autoShot = !S.autoShot; LS.set
 $('#sideBtn').addEventListener('click', () => { S.side = { left: 'right', right: 'center', center: 'left' }[S.side] || 'left'; LS.set('shutterSide', S.side); applyCamMode(); });
 
 /* auto photo: waits until the picture is steady and sharp, then takes it */
+/* Tape measure detector: looks for a straight strip of evenly spaced tick marks crossing the centre.
+   Works on tick rhythm, not colour, so yellow, white or red tapes all count. g = grey Uint8 array, w x h (about 320 px). */
+function tapeDetect(g, w, h, opt){
+  opt = opt || {};
+  const THR = opt.thr || 0.42, MINRUN = opt.minRun || 3, STEP = opt.step || 3;
+  const cx = w / 2, cy = h / 2, L = Math.floor(Math.min(w, h) * 0.92), R = Math.floor(Math.min(w, h) * 0.38);
+  const p = new Float32Array(L), q = new Float32Array(L), cs = new Float32Array(L + 1);
+  const coh = (A, B) => { let s = 0; for (let i = 0; i < L; i++) s += A.q[i] * B.q[i]; return s / Math.sqrt(A.e * B.e); };  // ticks line up on neighbouring lines
+  let best = { found: false, run: 0, angle: 0, lag: 0, score: 0 };
+  for (let a = 0; a < 180; a += 12){
+    const t = a * Math.PI / 180, dx = Math.cos(t), dy = Math.sin(t), nx = -dy, ny = dx;
+    const flags = [];
+    for (let o = -R; o <= R; o += STEP){
+      const ox = cx + nx * o, oy = cy + ny * o;
+      let ok = true;
+      for (let i = 0; i < L; i++){
+        const x = Math.round(ox + dx * (i - L / 2)), y = Math.round(oy + dy * (i - L / 2));
+        if (x < 0 || y < 0 || x >= w || y >= h){ ok = false; break; }
+        p[i] = g[y * w + x];
+      }
+      if (!ok){ flags.push(null); continue; }
+      cs[0] = 0; for (let i = 0; i < L; i++) cs[i + 1] = cs[i] + p[i];
+      const H = 8; let e = 0;
+      for (let i = 0; i < L; i++){ const a0 = Math.max(0, i - H), b0 = Math.min(L, i + H + 1); q[i] = p[i] - (cs[b0] - cs[a0]) / (b0 - a0); e += q[i] * q[i]; }
+      if (e / L < 40){ flags.push(null); continue; }              // too flat: no ticks here
+      let bk = 0, br = -1; const r = k => { let s = 0; for (let i = 0; i + k < L; i++) s += q[i] * q[i + k]; return s / e * L / (L - k); };
+      const rs = []; for (let k = 2; k <= 30; k++) rs[k] = r(k);
+      for (let k = 3; k <= 28; k++) if (rs[k] > rs[k - 1] && rs[k] >= rs[k + 1] && rs[k] > br){ br = rs[k]; bk = k; }
+      const second = bk && 2 * bk <= 30 ? rs[2 * bk] : (bk ? 0.2 : 0);
+      const good = br >= THR && second > 0.15;
+      flags.push(good ? { lag: bk, r: br, q: Float32Array.from(q), e } : null);
+    }
+    // longest band of neighbouring lines that share the same tick spacing
+    let run = 0, lag = 0, sc = 0;
+    for (let i = 0; i < flags.length; i++){
+      if (!flags[i]) continue;
+      let j = i, s = 0; const k0 = flags[i].lag;
+      while (j < flags.length && flags[j] && Math.abs(flags[j].lag - k0) <= 1 && (j === i || coh(flags[j - 1], flags[j]) >= (opt.coh || 0.5))){ s += flags[j].r; j++; }
+      if (j - i > run){ run = j - i; lag = k0; sc = s / (j - i); }
+    }
+    if (run > best.run || (run === best.run && sc > best.score)) best = { found: run >= MINRUN, run, angle: a, lag, score: +sc.toFixed(2) };
+  }
+  return best;
+}
+
+/* photo guard: is a tape measure (and, with a trained model, the product) in the picture? */
+const guard = { timer: null, hist: [], ai: [], start: 0, ok: !TAPE_CHECK, tape: false, aiOk: true, busy: false };
+const tcv = document.createElement('canvas'), tcx = tcv.getContext('2d', { willReadFrequently: true });
+function greyCentre(src, W, H){                                  // centre 50% of the picture, longest side 320 px
+  const sw = W * .5, sh = H * .5, sc = 320 / Math.max(sw, sh), w = Math.round(sw * sc), h = Math.round(sh * sc);
+  tcv.width = w; tcv.height = h; tcx.drawImage(src, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, w, h);
+  return { g: greyFrom(tcx, w, h), w, h };
+}
+const TAPE_OPT = { step: 2, thr: .42, coh: .5, minRun: 4 };
+function tapeInImage(src, W, H){ const c = greyCentre(src, W, H); return tapeDetect(c.g, c.w, c.h, TAPE_OPT).found; }
+function stopGuard(){ clearInterval(guard.timer); guard.timer = null; $('#forceBtn').classList.add('hidden'); $('#ovChip').textContent = ''; }
+function startGuard(){
+  stopGuard(); Object.assign(guard, { hist: [], ai: [], start: Date.now(), ok: !TAPE_CHECK, tape: false, aiOk: !AI.model });
+  if (!TAPE_CHECK && !AI.model){ showGuard(); return; }
+  guard.timer = setInterval(guardTick, 300); showGuard();
+}
+async function guardTick(){
+  const v = $('#video'); if (guard.busy || !stream || !v.videoWidth || camMode() !== 'photo'){ if (camMode() !== 'photo') stopGuard(); return; }
+  guard.busy = true;
+  try {
+    if (TAPE_CHECK){ guard.hist.push(tapeInImage(v, v.videoWidth, v.videoHeight)); if (guard.hist.length > 4) guard.hist.shift(); }
+    guard.tape = !TAPE_CHECK || guard.hist.filter(Boolean).length >= 2;      // seen in 2 of the last 4 checks
+    if (AI.model){
+      try { const pr = await AI.model.predict(v); const hit = pr.find(x => AI.okRe.test(x.className)) || pr[0];
+        guard.ai.push(hit.probability >= AI.min); if (guard.ai.length > 3) guard.ai.shift(); } catch {}
+      guard.aiOk = guard.ai.filter(Boolean).length >= 2;
+    } else guard.aiOk = true;
+    guard.ok = guard.tape && guard.aiOk;
+    showGuard();
+  } finally { guard.busy = false; }
+}
+function showGuard(){
+  const sh = $('#shutter'); sh.classList.toggle('locked', !guard.ok);
+  $('#ov').classList.toggle('seen', guard.ok);
+  $('#ovChip').className = 'chip' + (guard.ok ? ' ok' : '');
+  $('#ovChip').textContent = !TAPE_CHECK && !AI.model ? '' : guard.ok ? (AI.model ? 'Tape + product OK' : 'Tape OK')
+    : !guard.tape ? 'No tape measure seen' : 'Product not recognised';
+  const late = Date.now() - guard.start > FORCE_AFTER_S * 1000;
+  $('#forceBtn').classList.toggle('hidden', guard.ok || !late || camMode() !== 'photo');
+}
+$('#forceBtn').addEventListener('click', () => { stopAuto(); takeShot(guard.tape ? 'product not recognised' : 'no tape detected'); });
+
+/* optional product model: put model.json, metadata.json and weights.bin (Teachable Machine export) next to index.html */
+const AI = { model: null, okRe: /^(ok|good|pass|correct|tape)/i, min: .75 };
+const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+async function loadAI(){
+  try {
+    const r = await fetch('model.json', { cache: 'no-cache' }); if (!r.ok) return;
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js');
+    await loadScript('https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js');
+    AI.model = await window.tmImage.load('model.json', 'metadata.json');
+    toast('Product check model loaded: ' + AI.model.getClassLabels().join(' / '));
+  } catch { AI.model = null; }
+}
+
 const auto = { timer: null, prev: null, steadySince: 0, hist: [], start: 0, lastFocus: 0 };
 const acv = document.createElement('canvas'); acv.width = 240; acv.height = 180;
 const acx = acv.getContext('2d', { willReadFrequently: true });
@@ -788,13 +898,13 @@ function autoTick(){
   if (sharp < best * .6 && now - auto.lastFocus > 2500){ focusAt(.5, .5); auto.lastFocus = now; }
   const sharpOk = waited > 1000 && sharp >= 18 && sharp >= best * (easy ? .75 : .85);
   const need = easy ? 800 : 1100, held = auto.steadySince ? now - auto.steadySince : 0;
-  const p = sharpOk ? Math.min(1, held / need) : 0;
+  const p = sharpOk && guard.ok ? Math.min(1, held / need) : 0;
   setRing(p);
-  $('#ovHint').textContent = !auto.steadySince ? 'Hold still…' : !sharpOk ? 'Focusing…' : 'Keep still…';
+  $('#ovHint').textContent = !guard.ok ? (guard.tape ? 'Show the product with the tape' : 'Put the tape measure on the yellow line') : !auto.steadySince ? 'Hold still…' : !sharpOk ? 'Focusing…' : 'Keep still…';
   if (p >= 1){ stopAuto(); takeShot(); }
 }
-function takeShot(){ const p = snapVideo(); if (p) gotPhoto(p); }
-function stopCam(){ stopAuto(); clearInterval(camTimer); camPaused = true; if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } $('#camwrap').classList.remove('on'); $('#camBtn').classList.remove('hidden'); $('#zoomBox').classList.add('hidden'); torchOn = false; setStatus(''); applyCamMode(); }
+function takeShot(flag){ const p = snapVideo(); if (p) gotPhoto(p, flag || ''); }
+function stopCam(){ stopAuto(); stopGuard(); clearInterval(camTimer); camPaused = true; if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } $('#camwrap').classList.remove('on'); $('#camBtn').classList.remove('hidden'); $('#zoomBox').classList.add('hidden'); torchOn = false; setStatus(''); applyCamMode(); }
 $('#torchBtn').addEventListener('click', () => { if (!track) return; torchOn = !torchOn; track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {}); });
 
 function camMode(){
@@ -817,7 +927,7 @@ function applyCamMode(){
   $('#autoBtn').textContent = 'Auto photo: ' + (S.autoShot ? 'on' : 'off'); $('#autoBtn').classList.toggle('on', S.autoShot);
   $('#sideBtn').textContent = 'Button: ' + S.side;
   $('#shutter').className = 'shutter ' + S.side + (m === 'photo' ? '' : ' hidden');
-  clearInterval(camTimer); camPaused = true; stopAuto(); applyZoom();
+  clearInterval(camTimer); camPaused = true; stopAuto(); stopGuard(); applyZoom();
   if (m === 'scan'){
     $('#ovHint').textContent = S.expected ? `Scan the label of ${S.expected.model}` : 'Look up: scan any label';
     camPaused = false; lastRead = ''; sameCount = 0; armAt = Date.now() + 1500; camTimer = setInterval(camTick, 140);
@@ -825,8 +935,8 @@ function applyCamMode(){
   } else if (m === 'photo'){
     const k = S.insp.cur, up = /upright/i.test(S.expected.desc) && k === 'length';
     $('#ovHint').textContent = `${NAMES[k]}: put the tape reading on the yellow line`;
-    setStatus(`Close-up of the tape at the edge of the part${up ? ', length including the base plate' : ''}. ${S.autoShot ? 'Hold still: the ring fills and the photo is taken by itself.' : 'Press the yellow button.'} Tap the picture to focus. Zoom is remembered.`);
-    startAuto();
+    setStatus(`Close-up of the tape at the edge of the part${up ? ', length including the base plate' : ''}. The photo unlocks when the tape is seen (line turns green). ${S.autoShot ? 'Hold still: the ring fills and the photo is taken by itself.' : 'Press the yellow button.'} Tap the picture to focus.`);
+    startGuard(); startAuto();
   } else { $('#ovHint').textContent = S.insp && S.insp.saved ? 'Saved. Press Next carton.' : ''; setStatus(''); }
 }
 async function camTick(){
@@ -847,15 +957,20 @@ async function camTick(){
     }
   } finally { camBusy = false; }
 }
-$('#shutter').addEventListener('click', () => { stopAuto(); takeShot(); });
+$('#shutter').addEventListener('click', () => {
+  if (!guard.ok){ toast(guard.tape ? 'Product not recognised. Show the product with the tape.' : 'No tape measure seen. Put the tape reading on the yellow line.'); beep('bad'); return; }
+  stopAuto(); takeShot();
+});
 $('#fileShot').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
-  try { const bmp = await createImageBitmap(f); gotPhoto(toJpeg(bmp, bmp.width, bmp.height)); }
-  catch { const img = new Image(); img.onload = () => gotPhoto(toJpeg(img, img.naturalWidth, img.naturalHeight)); img.src = URL.createObjectURL(f); }
+  const use = (src, W, H) => { const ok = !TAPE_CHECK || tapeInImage(src, W, H); gotPhoto(toJpeg(src, W, H), ok ? '' : 'no tape detected (camera app)');
+    if (!ok) toast('No tape measure seen in this photo. It is flagged for the supervisor.'); };
+  try { const bmp = await createImageBitmap(f); use(bmp, bmp.width, bmp.height); }
+  catch { const img = new Image(); img.onload = () => use(img, img.naturalWidth, img.naturalHeight); img.src = URL.createObjectURL(f); }
 });
-function gotPhoto(p){
+function gotPhoto(p, flag){
   const I = S.insp; if (!I || !I.cur || I.cur === 'label') return;
-  I.steps[I.cur].photo = p; beep('tick');
+  I.steps[I.cur].photo = p; I.steps[I.cur].flag = flag || ''; beep('tick');
   const fl = document.createElement('div'); fl.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.7;transition:opacity .3s';
   $('#camwrap').appendChild(fl); requestAnimationFrame(() => { fl.style.opacity = 0; }); setTimeout(() => fl.remove(), 350);
   renderRail(); applyCamMode(); renderMeasure();
@@ -905,9 +1020,11 @@ function finish(){
   const dimRes = d => !d.need ? '-' : d.status !== 'done' ? 'NOT MEASURED' : d.grade === 'ok' ? 'PASS' : d.grade === 'minor' ? `MINOR +${fmm(d.over)}mm` : 'OUT OF TOL';
   const tag = d => d.grade === 'ok' ? '' : d.grade === 'minor' ? ` MINOR +${fmm(d.over)}` : ' NG';
   const sizeTxt = [W.status === 'done' ? `W ${fmm(W.value)}mm${tag(W)}` : '', Ln.status === 'done' ? `L ${fmm(Ln.value)}mm${tag(Ln)}` : ''].filter(Boolean).join(', ');
+  const flags = [[W, 'W'], [Ln, 'L']].filter(([d]) => d.status === 'done' && d.flag).map(([d, n]) => `${n} photo: ${d.flag}`);
   let remark;
   if (status === 'fail' && L.status === 'done' && !L.ok) remark = `NG ${L.code} = ${L.found || 'not in list'}, expected ${e.model} ${e.code}`;
   else remark = `${L.code ? L.code + ' ' : ''}${e.model} ${status === 'fail' ? 'NG' : status === 'minor' ? 'OK (minor)' : 'OK'}${sizeTxt ? ', ' + sizeTxt : ''}`;
+  if (flags.length) remark += ` [CHECK PHOTO: ${flags.join('; ')}]`;
   const result = status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : status === 'minor' ? 'MINOR' : 'CHECK';
   const rec = { id: S.device + '-' + now.getTime(), date: dStr(now), time: tStr(now), form: e.form, customer: e.customer, expected: e.model, desc: e.desc,
     expectedCode: e.code, code: L.code || '', found: L.status === 'done' ? (L.found || '(not in list)') : '', labelResult: L.status === 'na' ? 'NO CODE IN LIST' : L.ok ? 'PASS' : 'FAIL',
@@ -926,7 +1043,7 @@ function finish(){
     if (!d.need) checks.push({ cls: 'skip', b: n, span: 'not required for this model' });
     else if (d.status !== 'done') checks.push({ cls: 'skip', b: `${n} not measured`, span: 'stopped because the label is wrong' });
     else checks.push({ cls: d.grade, b: `${n} ${fmm(d.value)} mm`, span: d.grade === 'ok' ? `In tolerance (±${fmm(e.tol)} mm)` : '',
-      oot: d.grade === 'minor' ? `Out of tolerance by ${fmm(d.over)} mm, still acceptable` : d.grade === 'bad' ? 'Wrong size: outside the acceptable limit' : '', photo: d.photo });
+      oot: d.grade === 'minor' ? `Out of tolerance by ${fmm(d.over)} mm, still acceptable` : d.grade === 'bad' ? 'Wrong size: outside the acceptable limit' : '', photo: d.photo, note: d.flag ? `Photo flagged: ${d.flag}` : '' });
   });
   renderRail(); applyCamMode();
   showVerdict({ status, word, why, checks, remark, actions: [['Next carton', nextCarton, true]] });
@@ -939,7 +1056,7 @@ function showVerdict(o){
   $('#vword').textContent = o.word; $('#vwhy').textContent = o.why || '';
   $('#checks').innerHTML = (o.checks || []).map((c, i) => `<li class="${c.cls}"><span class="ic">${c.cls === 'ok' ? '✓' : c.cls === 'bad' ? '✗' : c.cls === 'minor' ? '!' : '–'}</span>
     <div><b>${esc(c.b)}</b><span>${esc(c.span)}</span>${c.oot ? `<span class="${c.cls === 'bad' || c.cls === 'minor' ? 'oot' : ''}">${esc(c.oot)}</span>` : ''}
-    ${c.gauge ? `<div class="gauge">${c.gauge}</div>` : ''}${c.photo ? `<button class="btn link" type="button" data-photo="${i}">See photo</button>` : ''}</div></li>`).join('');
+    ${c.note ? `<span class="flag" style="display:block;color:var(--warn)">${esc(c.note)}</span>` : ''}${c.photo ? `<button class="btn link" type="button" data-photo="${i}">See photo</button>` : ''}</div></li>`).join('');
   $$('#checks [data-photo]').forEach(b => b.addEventListener('click', () => { $('#photoBig').src = o.checks[+b.dataset.photo].photo; $('#photoDlg').showModal(); }));
   $('#vactions').innerHTML = (o.actions || []).map((a, i) => `<button class="btn ${a[2] ? 'primary' : ''}" type="button" data-act="${i}" style="min-width:180px">${esc(a[0])}</button>`).join('');
   $$('#vactions [data-act]').forEach(b => b.addEventListener('click', () => o.actions[+b.dataset.act][1]()));
@@ -1031,6 +1148,7 @@ if (sessionAlive(saved)){
   if (S.sheetUrl) post({ action: 'check', token: saved.token }).then(j => { if (j && !j.ok && j.error !== 'server'){ LS.set('session', null); showLogin(LOGIN_ERR[j.error] || 'Please log in again.'); } }).catch(() => {});
 } else showLogin();
 loadList().then(flushLog);
+loadAI();
 setInterval(flushLog, 60000); window.addEventListener('online', flushLog);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

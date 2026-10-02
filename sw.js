@@ -1,5 +1,5 @@
 /* QC Label & Size Verifier – offline app shell. Bump VERSION when you upload a new index.html. */
-const VERSION = 'qcv2-r3';
+const VERSION = 'qcv2-r4';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'maskable-192.png', 'maskable-512.png', 'favicon-32.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
