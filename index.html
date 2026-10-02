@@ -56,7 +56,7 @@ button,input,select{font:inherit;color:inherit}
 .brand small{display:block;font:500 14px/1.3 var(--body);color:var(--ink2)}
 .tally{display:flex;gap:6px}
 .tally span{font:700 17px/1 var(--display);padding:8px 10px;border-radius:8px;background:var(--panel);border:1px solid var(--line);white-space:nowrap}
-.tally .p{color:var(--pass)} .tally .f{color:var(--fail)}
+.tally .p{color:var(--pass)} .tally .f{color:var(--fail)} .tally .m{color:var(--warn)}
 .pill{border:1.5px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 14px;min-height:44px;font-size:14px;font-weight:600;cursor:pointer}
 .pill.ok{border-color:var(--pass);color:var(--pass)} .pill.wait{border-color:var(--warn);color:var(--warn)} .pill.off{color:var(--ink2)}
 .userchip{display:flex;align-items:center;gap:8px;font-weight:600}
@@ -118,6 +118,8 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 .rail button.bad .n{background:var(--fail);color:#fff}
 .rail button.ent .n{background:var(--ink);color:var(--bg)}
 .rail button.bad{border-color:var(--fail)}
+.rail button.minor .n{background:var(--warn);color:#fff}
+.rail button.minor{border-color:var(--warn)}
 .rail button.na{background:repeating-linear-gradient(-45deg,var(--panel) 0 8px,var(--card) 8px 16px);cursor:default}
 .rail button.na .t{color:var(--ink2);text-decoration:line-through;text-decoration-thickness:2px}
 .rail button:disabled{cursor:default}
@@ -186,10 +188,10 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 /* verdict */
 .verdict{margin-top:12px;background:var(--card);border:2px solid var(--ink);border-radius:8px;position:relative;overflow:hidden}
 .verdict::before{content:"";position:absolute;inset:0 auto 0 0;width:14px;background:var(--line)}
-.verdict.pass::before{background:var(--pass)} .verdict.fail::before{background:var(--fail)} .verdict.warn::before{background:var(--warn)}
+.verdict.pass::before{background:var(--pass)} .verdict.fail::before{background:var(--fail)} .verdict.warn::before,.verdict.minor::before{background:var(--warn)}
 .vin{padding:14px 16px 16px 30px}
 .vword{font:800 clamp(54px,10vw,108px)/.9 var(--display)}
-.verdict.pass .vword{color:var(--pass)} .verdict.fail .vword{color:var(--fail)} .verdict.warn .vword{color:var(--warn)}
+.verdict.pass .vword{color:var(--pass)} .verdict.fail .vword{color:var(--fail)} .verdict.warn .vword,.verdict.minor .vword{color:var(--warn)}
 .verdict.idle .vword{font-size:clamp(34px,6vw,54px);color:var(--ink2)}
 .vwhy{font:600 20px/1.25 var(--body);margin-top:6px}
 .checks{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
@@ -197,6 +199,8 @@ input:focus,select:focus{border-color:var(--focus);outline:none}
 .checks .ic{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 20px/1 var(--display);color:#fff}
 .checks .ok .ic{background:var(--pass)} .checks .bad .ic{background:var(--fail)} .checks .skip .ic{background:var(--line);color:var(--ink2)}
 .checks .bad{background:var(--fail-bg)}
+.checks .minor .ic{background:var(--warn)} .checks .minor{background:var(--warn-bg)}
+.checks .minor span.oot{color:var(--warn);font-weight:700}
 .checks b{font:700 21px/1.15 var(--display);display:block}
 .checks span{font-size:15px;color:var(--ink2)}
 .checks .bad span.oot{color:var(--fail);font-weight:700}
@@ -346,6 +350,9 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 <script>
 /* ============ SETTINGS: paste your NEW Apps Script Web App URL between the quotes ============ */
 const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbxxapH1AfbRFyEtWiE_Bfu0gxywmfSjljZkjBA1loS5N5DojBde0ynMzP3kr7mS0CImkg/exec';
+/* Minor band: reading outside the tolerance by up to this many mm = yellow "minor, still acceptable".
+   Further out = red FAIL. Example: spec 894, tolerance ±1, band 1 → 893–895 pass, 892 / 896 minor, 891 / 897 and beyond fail. */
+const MINOR_BAND_MM = 2;
 /* ============================================================================================ */
 (() => {
 'use strict';
@@ -513,7 +520,8 @@ function markHist(id, st){ const a = LS.get('hist', []); const h = a.find(x => x
 function renderToday(){
   const today = dStr(new Date()), list = LS.get('hist', []).filter(h => h.date === today);
   const p = list.filter(h => h.result === 'PASS').length, f = list.filter(h => h.result === 'FAIL').length;
-  $('#tally').innerHTML = `<span>${list.length} checked</span><span class="p">${p} pass</span><span class="f">${f} NG</span>`;
+  const mi = list.filter(h => h.result === 'MINOR').length;
+  $('#tally').innerHTML = `<span>${list.length} checked</span><span class="p">${p} pass</span>${mi ? `<span class="m">${mi} minor</span>` : ''}<span class="f">${f} NG</span>`;
   $('#tally').classList.toggle('hidden', !S.session);
   $('#todayList').innerHTML = list.length ? list.slice(0, 40).map(h => `<li><span class="tm">${esc(h.time.slice(0, 5))}</span>
     <span><span class="md">${esc(h.model)}</span><br><span class="sz">${esc(h.size || 'label only')}</span></span>
@@ -596,7 +604,7 @@ function railSub(k, s){
     if (s.status === 'done') return s.ok ? 'matches' : 'wrong label';
     return 'scan the sticker';
   }
-  if (s.status === 'done') return S.insp.saved ? `${fmm(s.value)} mm ${s.ok ? 'in tol.' : 'out of tol.'}` : `${fmm(s.value)} mm entered`;
+  if (s.status === 'done') return S.insp.saved ? `${fmm(s.value)} mm ${s.grade === 'ok' ? 'in tol.' : s.grade === 'minor' ? 'minor' : 'wrong size'}` : `${fmm(s.value)} mm entered`;
   if (s.status === 'skip') return 'not measured';
   return 'measure';
 }
@@ -609,10 +617,10 @@ function renderRail(){
   const st = S.insp.steps, saved = S.insp.saved;
   r.innerHTML = ORDER.map((k, i) => { const s = st[k];
     const hide = k !== 'label' && s.status === 'done' && !saved;          // size result stays hidden until saved
-    const cls = s.status === 'na' || s.status === 'skip' ? 'na' : s.status === 'done' ? (hide ? 'ent' : s.ok ? 'done' : 'bad') : '';
+    const cls = s.status === 'na' || s.status === 'skip' ? 'na' : s.status === 'done' ? (hide ? 'ent' : (k === 'label' ? s.ok : s.grade === 'ok') ? 'done' : s.grade === 'minor' ? 'minor' : 'bad') : '';
     const canTap = !saved && s.need && s.status !== 'na' && !(k !== 'label' && st.label.status === 'done' && !st.label.ok);
     return `<li><button type="button" data-step="${k}" class="${cls}" ${S.insp.cur === k && !saved ? 'aria-current="step"' : ''} ${canTap ? '' : 'disabled'}>
-      <span class="n">${s.status === 'done' ? (hide || s.ok ? '✓' : '✗') : s.status === 'na' || s.status === 'skip' ? '–' : i + 1}</span>
+      <span class="n">${s.status === 'done' ? (hide || (k === 'label' ? s.ok : s.grade === 'ok') ? '✓' : s.grade === 'minor' ? '!' : '✗') : s.status === 'na' || s.status === 'skip' ? '–' : i + 1}</span>
       <span><span class="t">${NAMES[k]}</span><span class="s">${esc(railSub(k, s))}</span></span>
       ${s.photo ? `<img src="${s.photo}" alt="">` : ''}</button></li>`; }).join('');
 }
@@ -657,7 +665,10 @@ function confirmReading(){
   const s = I.steps[I.cur], v = parseReading(), e = S.expected;
   if (v == null){ $('#liveMsg').className = 'gmsg bad'; $('#liveMsg').textContent = 'Type the tape reading in mm first.'; $('#reading').focus(); return; }
   if (!checkInput()){ $('#reading').focus(); return; }
-  s.value = v; s.ok = Math.abs(v - s.spec) <= e.tol + 1e-9; s.status = 'done'; delete s.draft;
+  s.value = v; s.status = 'done'; delete s.draft;
+  const dev = Math.abs(v - s.spec);
+  s.grade = dev <= e.tol + 1e-9 ? 'ok' : dev <= e.tol + MINOR_BAND_MM + 1e-9 ? 'minor' : 'bad';
+  s.ok = s.grade === 'ok'; s.over = Math.round((dev - e.tol) * 10) / 10;
   beep('tick');
   $('#measure').classList.add('hidden');
   goNext();
@@ -878,21 +889,26 @@ function finish(){
   const I = S.insp, e = S.expected, st = I.steps, now = new Date();
   I.saved = true; I.cur = null;
   const L = st.label, W = st.width, Ln = st.length;
-  const dimBad = [W, Ln].filter(d => d.status === 'done' && !d.ok);
+  const dimBad = [W, Ln].filter(d => d.status === 'done' && d.grade === 'bad');
+  const dimMinor = [W, Ln].filter(d => d.status === 'done' && d.grade === 'minor');
+  const nm = d => d === W ? 'width' : 'length', join = a => a.map(nm).join(' and ');
   let status, word, why;
   if (L.status === 'done' && !L.ok){ status = 'fail'; word = L.found ? 'Wrong label' : 'Wrong code'; why = `This code ${L.why}.`; }
   else if (dimBad.length){ status = 'fail'; word = 'Size NG';
-    why = `${L.status === 'done' ? 'Label is correct, but ' : ''}${dimBad.map(d => d === W ? 'width' : 'length').join(' and ')} ${dimBad.length > 1 ? 'are' : 'is'} out of tolerance (±${fmm(e.tol)} mm).`; }
+    why = `${L.status === 'done' ? 'Label is correct, but ' : ''}${join(dimBad)} ${dimBad.length > 1 ? 'are' : 'is'} the wrong size (outside the acceptable limit).`; }
+  else if (dimMinor.length){ status = 'minor'; word = 'Minor';
+    why = `${L.status === 'done' ? 'Label is correct. ' : ''}${join(dimMinor).replace(/^./, c => c.toUpperCase())} ${dimMinor.length > 1 ? 'are' : 'is'} slightly out of tolerance, still acceptable. Tell production.`; }
   else if (L.status === 'na'){ status = 'warn'; word = 'Check';
     why = `Size is in tolerance, but ${e.model} has no label code in the code list. Tell the list owner.`; }
   else { status = 'pass'; word = 'Pass'; why = `Label and size are correct for ${e.model}.`; }
 
-  const dimRes = d => !d.need ? '-' : d.status === 'done' ? (d.ok ? 'PASS' : 'OUT OF TOL') : 'NOT MEASURED';
-  const sizeTxt = [W.status === 'done' ? `W ${fmm(W.value)}mm${W.ok ? '' : ' OUT'}` : '', Ln.status === 'done' ? `L ${fmm(Ln.value)}mm${Ln.ok ? '' : ' OUT'}` : ''].filter(Boolean).join(', ');
+  const dimRes = d => !d.need ? '-' : d.status !== 'done' ? 'NOT MEASURED' : d.grade === 'ok' ? 'PASS' : d.grade === 'minor' ? `MINOR +${fmm(d.over)}mm` : 'OUT OF TOL';
+  const tag = d => d.grade === 'ok' ? '' : d.grade === 'minor' ? ` MINOR +${fmm(d.over)}` : ' NG';
+  const sizeTxt = [W.status === 'done' ? `W ${fmm(W.value)}mm${tag(W)}` : '', Ln.status === 'done' ? `L ${fmm(Ln.value)}mm${tag(Ln)}` : ''].filter(Boolean).join(', ');
   let remark;
   if (status === 'fail' && L.status === 'done' && !L.ok) remark = `NG ${L.code} = ${L.found || 'not in list'}, expected ${e.model} ${e.code}`;
-  else remark = `${L.code ? L.code + ' ' : ''}${e.model} ${status === 'fail' ? 'NG' : 'OK'}${sizeTxt ? ', ' + sizeTxt : ''}${dimBad.length ? ` (out of tol. ±${fmm(e.tol)})` : ''}`;
-  const result = status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : 'CHECK';
+  else remark = `${L.code ? L.code + ' ' : ''}${e.model} ${status === 'fail' ? 'NG' : status === 'minor' ? 'OK (minor)' : 'OK'}${sizeTxt ? ', ' + sizeTxt : ''}`;
+  const result = status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : status === 'minor' ? 'MINOR' : 'CHECK';
   const rec = { id: S.device + '-' + now.getTime(), date: dStr(now), time: tStr(now), form: e.form, customer: e.customer, expected: e.model, desc: e.desc,
     expectedCode: e.code, code: L.code || '', found: L.status === 'done' ? (L.found || '(not in list)') : '', labelResult: L.status === 'na' ? 'NO CODE IN LIST' : L.ok ? 'PASS' : 'FAIL',
     widSpec: W.need ? W.spec : '', widRead: W.status === 'done' ? W.value : '', widResult: dimRes(W),
@@ -909,20 +925,20 @@ function finish(){
   [[W, 'Width'], [Ln, 'Length']].forEach(([d, n]) => {
     if (!d.need) checks.push({ cls: 'skip', b: n, span: 'not required for this model' });
     else if (d.status !== 'done') checks.push({ cls: 'skip', b: `${n} not measured`, span: 'stopped because the label is wrong' });
-    else checks.push({ cls: d.ok ? 'ok' : 'bad', b: `${n} ${fmm(d.value)} mm`, span: d.ok ? `In tolerance (±${fmm(e.tol)} mm)` : '',
-      oot: d.ok ? '' : `Out of tolerance (more than ±${fmm(e.tol)} mm)`, photo: d.photo });
+    else checks.push({ cls: d.grade, b: `${n} ${fmm(d.value)} mm`, span: d.grade === 'ok' ? `In tolerance (±${fmm(e.tol)} mm)` : '',
+      oot: d.grade === 'minor' ? `Out of tolerance by ${fmm(d.over)} mm, still acceptable` : d.grade === 'bad' ? 'Wrong size: outside the acceptable limit' : '', photo: d.photo });
   });
   renderRail(); applyCamMode();
   showVerdict({ status, word, why, checks, remark, actions: [['Next carton', nextCarton, true]] });
-  if (status === 'pass') beep('ok'); else if (status === 'fail' && !(L.status === 'done' && !L.ok)) beep('bad');
+  if (status === 'pass') beep('ok'); else if (status === 'minor') beep('tick'); else if (status === 'fail' && !(L.status === 'done' && !L.ok)) beep('bad');
 }
 function nextCarton(){ newInspection(); if (!stream) startCam(); }
 
 function showVerdict(o){
   const v = $('#verdict'); v.className = 'verdict ' + (o.status || 'idle'); void v.offsetWidth; v.classList.add('flash');
   $('#vword').textContent = o.word; $('#vwhy').textContent = o.why || '';
-  $('#checks').innerHTML = (o.checks || []).map((c, i) => `<li class="${c.cls}"><span class="ic">${c.cls === 'ok' ? '✓' : c.cls === 'bad' ? '✗' : '–'}</span>
-    <div><b>${esc(c.b)}</b><span>${esc(c.span)}</span>${c.oot ? `<span class="${c.cls === 'bad' ? 'oot' : ''}">${esc(c.oot)}</span>` : ''}
+  $('#checks').innerHTML = (o.checks || []).map((c, i) => `<li class="${c.cls}"><span class="ic">${c.cls === 'ok' ? '✓' : c.cls === 'bad' ? '✗' : c.cls === 'minor' ? '!' : '–'}</span>
+    <div><b>${esc(c.b)}</b><span>${esc(c.span)}</span>${c.oot ? `<span class="${c.cls === 'bad' || c.cls === 'minor' ? 'oot' : ''}">${esc(c.oot)}</span>` : ''}
     ${c.gauge ? `<div class="gauge">${c.gauge}</div>` : ''}${c.photo ? `<button class="btn link" type="button" data-photo="${i}">See photo</button>` : ''}</div></li>`).join('');
   $$('#checks [data-photo]').forEach(b => b.addEventListener('click', () => { $('#photoBig').src = o.checks[+b.dataset.photo].photo; $('#photoDlg').showModal(); }));
   $('#vactions').innerHTML = (o.actions || []).map((a, i) => `<button class="btn ${a[2] ? 'primary' : ''}" type="button" data-act="${i}" style="min-width:180px">${esc(a[0])}</button>`).join('');
